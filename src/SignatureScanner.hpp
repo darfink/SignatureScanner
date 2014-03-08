@@ -2,12 +2,12 @@
 
 #include <cstdint>
 #include <stdexcept>
-#include <string>
 #include <vector>
-#include <limits>
+#include <memory>
 
 namespace {
 typedef unsigned char byte;
+typedef unsigned int  uint;
 typedef unsigned long ulong;
 }
 
@@ -31,20 +31,6 @@ public:
 
     /* Construct a signature scanner
      *
-     * @allModules Specifies whether all modules within the current process
-     *             should be added or not.
-     */
-    explicit SignatureScanner(bool allModules = false);
-
-    /* Signature scanner destructor
-     *
-     * The destructor deallocates any occupied memory and closes all module
-     * handles (if they are to be retained, the reference count must increment)
-     */
-    virtual ~SignatureScanner();
-
-    /* Add a library module
-     *
      * Resolves an address into the module that contains it. The entire module
      * will be indexed and added to the region list. Any signature searches
      * can be specifically for this module or combined with all other regions
@@ -53,7 +39,7 @@ public:
      * @containedAddress An address that resides within the module that is to
      *                   be added to the module collection.
      */
-    void AddModule(void* containedAddress);
+    explicit SignatureScanner(void* containedAddress);
 
     /* Search for a signature
      *
@@ -87,44 +73,39 @@ public:
     	const std::vector<byte>& signature,
     	const char* mask,
     	size_t offset = 0,
-        size_t length = std::numeric_limits<size_t>::max()) const;
+        size_t length = npos) const;
 
     /* Search for a module symbol
      *
      */
-    void* FindSymbol(const std::string& symbol);
+    void* FindSymbol(const std::string& symbol) const;
+
+public:
+    /* Maximum value for size_t */
+    static const size_t npos = -1;
 
 private:
-#ifndef _WIN32
+    /* */
+    struct MemoryInformation {
+        void* baseAddress;
+        size_t regionSize;
+        ulong protection;
+        uint state;
+    };
+
     /* Get a modules size in memory
      *
      * @baseAddress Wtf
      *
      * @return Douchebag
      */
-    size_t GetModuleSize(uintptr_t baseAddress);
-#endif
+    void GetMemoryInfo(const void* address, MemoryInformation* memoryInfo) const;
 
-    /*
-     *
-     */
-    uintptr_t FindSignature(
-            size_t baseAddress,
-            size_t length,
-            const std::vector<byte>& signature,
-            const char* mask);
-
-    /* Memory region
-     *
-     * A structure that describes a searchable region in memory with a base
-     * address, length and a module handle.
-     */
-    struct Region {
-        uintptr_t baseAddress;
-        size_t baseLength;
-        void* handle;
-    };
+    /* */
+    bool IsMemoryAccessible(const MemoryInformation& memoryInfo) const;
 
     // Private members
-    std::vector<Region> mRegions;
+    std::shared_ptr<void> mModuleHandle;
+    uintptr_t mBaseAddress;
+    size_t mModuleSize;
 };
