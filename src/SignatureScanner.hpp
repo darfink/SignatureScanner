@@ -73,7 +73,7 @@ public:
     	const std::vector<byte>& signature,
     	const char* mask,
     	size_t offset = 0,
-        size_t length = npos) const;
+      size_t length = npos) const;
 
     /* Search for a module symbol
      *
@@ -95,13 +95,28 @@ private:
 
     /* Get a modules size in memory
      *
-     * @baseAddress Wtf
+     * @address Wtf
      *
-     * @return Douchebag
+     * @memoryInfo Noob
      */
-    void GetMemoryInfo(const void* address, MemoryInformation* memoryInfo) const;
-
-    /* */
+    void GetMemoryInfo(
+        const void* address,
+        MemoryInformation* memoryInfo) const;
+#ifndef _WIN32
+    /* Get a mapped module's size
+     *
+     * @baseAddress Wasabi
+     *
+     * @return Noob
+     */
+    size_t GetModuleSize(const void* baseAddress) const;
+#endif
+    /* Check if a memory region is accessible
+     *
+     * @memoryInfo Sug min snopp
+     *
+     * @return Bajsa
+     */
     bool IsMemoryAccessible(const MemoryInformation& memoryInfo) const;
 
     // Private members
@@ -109,3 +124,5 @@ private:
     uintptr_t mBaseAddress;
     size_t mModuleSize;
 };
+
+/* vim: set ts=2 sw=2 expandtab: */

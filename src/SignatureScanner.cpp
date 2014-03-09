@@ -14,10 +14,10 @@
 #include "SignatureScanner.hpp"
 
 namespace {
-template<typename T, size_t size>
-constexpr size_t GetArraySize(T(&)[size]) { return size; }
+template<typename T, size_t Size>
+constexpr size_t GetArraySize(T(&)[Size]) { return Size; }
 }
-
+#include <unistd.h>
 SignatureScanner::SignatureScanner(void* containedAddress) :
     mBaseAddress(0),
     mModuleSize(0)
@@ -26,7 +26,9 @@ SignatureScanner::SignatureScanner(void* containedAddress) :
 
 #ifdef _WIN32
   HMODULE module;
-  if(!GetModuleHandleEx(GET_MODULE_HANDLE_EX_FLAG_FROM_ADDRESS, containedAddress)) {
+  if(!GetModuleHandleEx(
+      GET_MODULE_HANDLE_EX_FLAG_FROM_ADDRESS,
+      containedAddress)) {
     throw Exception("couldn't retrieve memory module handle");
   }
 
@@ -35,7 +37,11 @@ SignatureScanner::SignatureScanner(void* containedAddress) :
   });
 
   MODULEINFO* moduleInfo;
-  if(!GetModuleInformation(GetCurrentProcess(), module, &moduleInfo, sizeof(MODULEINFO))) {
+  if(!GetModuleInformation(
+      GetCurrentProcess(),
+      module,
+      &moduleInfo,
+      sizeof(MODULEINFO))) {
     throw Exception("couldn't retrieve module information");
   }
 
@@ -55,11 +61,8 @@ SignatureScanner::SignatureScanner(void* containedAddress) :
     throw Exception("couldn't open module handle");
   }
 
-  MemoryInformation memoryInfo;
-  this->GetMemoryInfo(reinterpret_cast<void*>(mBaseAddress), &memoryInfo);
-
   mBaseAddress = reinterpret_cast<uintptr_t>(info.dli_fbase);
-  mModuleSize  = memoryInfo.regionSize;
+  mModuleSize  = this->GetModuleSize(info.dli_fbase);
 #endif
 }
 
@@ -133,13 +136,18 @@ void* SignatureScanner::FindSymbol(const std::string& symbol) const {
 #endif
 }
 
-void SignatureScanner::GetMemoryInfo(const void* address, MemoryInformation* memoryInfo) const {
+void SignatureScanner::GetMemoryInfo(
+    const void* address,
+    MemoryInformation* memoryInfo) const {
   assert(memoryInfo != nullptr);
   assert(address != nullptr);
 
 #ifdef _WIN32
   MEMORY_BASIC_INFORMATION memoryBasicInformation;
-  if(!VirtualQuery(address, &memoryBasicInformation, sizeof(MEMORY_BASIC_INFORMATION))) {
+  if(!VirtualQuery(
+      address,
+      &memoryBasicInformation,
+      sizeof(MEMORY_BASIC_INFORMATION))) {
     throw Exception("couldn't retrieve basic memory information");
   }
 
@@ -153,22 +161,24 @@ void SignatureScanner::GetMemoryInfo(const void* address, MemoryInformation* mem
   std::ifstream fstream("/proc/self/maps");
   std::string input;
 
+  if(!fstream.good()) {
+    throw Exception("couldn't open memory mapping information file");
+  }
+
   char protection[4];
   uintptr_t lower, upper;
   bool found = false;
 
   while(!found && std::getline(fstream, input)) {
-    if(sscanf(input.c_str(), "%lx-%lx %c%c%c%c",
-        &lower,
-        &upper,
-        &protection[0],
-        &protection[1],
-        &protection[2],
-        &protection[3]) != 6) {
+    if(sscanf(input.c_str(), "%lx-%lx %s", &lower, &upper, protection) != 3) {
       continue;
     }
 
+    // Check if the address is located within the page
     if(targetAddress >= lower && targetAddress < upper) {
+      // We have a match
+      found = true;
+
       memoryInfo->baseAddress = reinterpret_cast<void*>(lower);
       memoryInfo->regionSize = upper - lower;
       memoryInfo->protection = 0;
@@ -185,8 +195,6 @@ void SignatureScanner::GetMemoryInfo(const void* address, MemoryInformation* mem
         case '-': break;
         }
       }
-
-      found = true;
     }
   }
 
@@ -196,7 +204,61 @@ void SignatureScanner::GetMemoryInfo(const void* address, MemoryInformation* mem
 #endif
 }
 
-bool SignatureScanner::IsMemoryAccessible(const MemoryInformation& memoryInfo) const {
+#ifndef _WIN32
+size_t SignatureScanner::GetModuleSize(const void* baseAddress) const {
+  assert(baseAddress != nullptr);
+
+  std::ifstream fstream("/proc/self/maps");
+  std::string input;
+
+  if(!fstream.good()) {
+    throw Exception("couldn't open memory mapping information file");
+  }
+
+  bool found = false;
+  uintptr_t address = reinterpret_cast<uintptr_t>(baseAddress);
+  uintptr_t lower, upper, offset;
+  char permissions[4];
+  byte major, minor;
+  uint inode;
+
+  uintptr_t moduleBase, moduleEnd;
+  uint moduleNode;
+
+  while(std::getline(fstream, input)) {
+    if(sscanf(input.c_str(), "%lx-%lx %s %lx %hhu:%hhu %du",
+        &lower, &upper, permissions, &offset, &major, &minor, &inode) != 7) {
+      continue;
+    }
+
+    if(address == lower && !found) {
+      moduleBase = lower;
+      moduleNode = inode;
+      moduleEnd  = upper;
+
+      found = true;
+      continue;
+    } else if(found) {
+      if(inode != moduleNode) {
+        break;
+      }
+
+      // Update the upper bound
+      moduleEnd = upper;
+    }
+  }
+
+  if(!found) {
+    throw Exception("couldn't find memory module");
+  }
+
+  // Calculate the final module size
+  return (moduleEnd - moduleBase);
+}
+#endif
+
+bool SignatureScanner::IsMemoryAccessible(
+    const MemoryInformation& memoryInfo) const {
 #ifdef _WIN32
   const ulong Readable =
     PAGE_EXECUTE_READ      |
@@ -221,3 +283,5 @@ bool SignatureScanner::IsMemoryAccessible(const MemoryInformation& memoryInfo) c
   return (memoryInfo.protection & PROT_READ);
 #endif
 }
+
+/* vim: set ts=2 sw=2 expandtab: */
