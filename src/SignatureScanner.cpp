@@ -62,7 +62,7 @@ SignatureScanner::SignatureScanner(void* containedAddress) :
   }
 
   mBaseAddress = reinterpret_cast<uintptr_t>(info.dli_fbase);
-  mModuleSize  = this->GetModuleSize(info.dli_fbase);
+  mModuleSize  = this->CalculateModuleSize(info.dli_fbase);
 #endif
 }
 
@@ -205,7 +205,7 @@ void SignatureScanner::GetMemoryInfo(
 }
 
 #ifndef _WIN32
-size_t SignatureScanner::GetModuleSize(const void* baseAddress) const {
+size_t SignatureScanner::CalculateModuleSize(const void* baseAddress) const {
   assert(baseAddress != nullptr);
 
   std::ifstream fstream("/proc/self/maps");
